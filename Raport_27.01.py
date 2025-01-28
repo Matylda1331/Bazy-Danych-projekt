@@ -118,6 +118,8 @@ for i in range(len(Suma_koszty)):
 
 min_zysk_rodzaj = min(Zyski_rodzaj, key=lambda x: x[1])  #najmniejszy zysk
 max_zysk_rodzaj = max(Zyski_rodzaj, key=lambda x: x[1])  #najwiekszy zysk
+suma_zysk_rodzaj = sum(x[1] for x in Zyski_rodzaj) 
+print(suma_zysk_rodzaj)
 
 #PYTANIE 2
 cursor.execute("""
@@ -318,35 +320,32 @@ if koszty_stanowiska is None:
     koszty_stanowiska = 0
 #miesięczny koszt zatrudnienia pracowników
 koszt_pracownicy = narzut + float(koszty_stanowiska)
+print(koszt_pracownicy)
 
 #Suma kosztów organizacji wycieczek w danym miesiącu
 cursor.execute('''
-SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia) AS rok,
-MONTH(Realizowane_wycieczki.Data_rozpoczecia) AS miesiac,
-SUM(Koszty_organizacji.Nocleg_za_noc * 
-(DATEDIFF(Realizowane_wycieczki.Data_zakonczenia, Realizowane_wycieczki.Data_rozpoczecia) - 2)
-+ Koszty_organizacji.Przewodnik
-+ Koszty_organizacji.Loty
-+ Koszty_organizacji.Atrakcje
-+ Koszty_organizacji.Ubezpieczenie
-+ Koszty_organizacji.Transport
-) * (SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
-FROM Rezerwacje JOIN Realizowane_wycieczki
-ON Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
-JOIN Rodzaje_wycieczek
-ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
-WHERE Rezerwacje.id_transakcje IN 
-(SELECT id_transakcje FROM Transakcje_finansowe
-WHERE Zrealizowano = 1)
-AND (SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia)) = rok
-AND (SELECT MONTH(Realizowane_wycieczki.Data_rozpoczecia)) = miesiac) AS koszt
+SELECT 
+    YEAR(Realizowane_wycieczki.Data_rozpoczecia) AS rok,
+    MONTH(Realizowane_wycieczki.Data_rozpoczecia) AS miesiac,
+    SUM(
+        (Koszty_organizacji.Nocleg_za_noc 
+         * (DATEDIFF(Realizowane_wycieczki.Data_zakonczenia, Realizowane_wycieczki.Data_rozpoczecia)-2)
+        + Koszty_organizacji.Przewodnik
+        + Koszty_organizacji.Loty
+        + Koszty_organizacji.Atrakcje
+        + Koszty_organizacji.Ubezpieczenie
+        + Koszty_organizacji.Transport)
+        * (SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
+        FROM Rezerwacje 
+        WHERE Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
+        AND Rezerwacje.id_transakcje IN (SELECT id_transakcje FROM Transakcje_finansowe WHERE Zrealizowano = 1))
+    ) AS koszt
 FROM Koszty_organizacji 
 JOIN Realizowane_wycieczki 
-ON Koszty_organizacji.id_koszty = Realizowane_wycieczki.id_koszty
-GROUP BY YEAR(Realizowane_wycieczki.Data_rozpoczecia),
-MONTH(Realizowane_wycieczki.Data_rozpoczecia)
+    ON Koszty_organizacji.id_koszty = Realizowane_wycieczki.id_koszty
+GROUP BY rok, miesiac
 ORDER BY rok, miesiac
-LIMIT 36;
+LIMIT 34;
 ''')
 
 wynik = cursor.fetchall()
@@ -360,24 +359,19 @@ for row in wynik:
 
 #Zyski całkowite na miesiąc (po dacie wyjazdu, NIE rezerwacji)
 cursor.execute('''
-SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia) AS rok,
-MONTH(Realizowane_wycieczki.Data_rozpoczecia) AS miesiac,
-SUM(Realizowane_wycieczki.Cena_za_osobe*
-(SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
-FROM Rezerwacje JOIN Realizowane_wycieczki
-ON Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
-JOIN Rodzaje_wycieczek
-ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
-WHERE Rezerwacje.id_transakcje IN 
-(SELECT id_transakcje FROM Transakcje_finansowe
-WHERE Zrealizowano = 1)
-AND (SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia)) = rok
-AND (SELECT MONTH(Realizowane_wycieczki.Data_rozpoczecia)) = miesiac)) AS przychod
+SELECT 
+    YEAR(Realizowane_wycieczki.Data_rozpoczecia) AS rok,
+    MONTH(Realizowane_wycieczki.Data_rozpoczecia) AS miesiac,
+    SUM(Realizowane_wycieczki.Cena_za_osobe 
+    * (SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
+    FROM Rezerwacje 
+    WHERE Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
+    AND Rezerwacje.id_transakcje IN (SELECT id_transakcje FROM Transakcje_finansowe WHERE Zrealizowano = 1))
+    ) AS przychod
 FROM Realizowane_wycieczki
-GROUP BY YEAR(Realizowane_wycieczki.Data_rozpoczecia),
-MONTH(Realizowane_wycieczki.Data_rozpoczecia)
+GROUP BY rok, miesiac
 ORDER BY rok, miesiac
-LIMIT 36;
+LIMIT 34;
 ''')
 
 wynik = cursor.fetchall()
@@ -616,14 +610,15 @@ def wykresy4():
         plt.close()
 
 
-
-
 Zyski_mies = []
 for i in range(len(Koszty_miesiac)):
     rok, miesiac, koszt = Koszty_miesiac[i]
     _,_, przychod = Przychod_miesiac[i]
     zysk = przychod - koszt - koszt_pracownicy
     Zyski_mies.append((rok, miesiac, zysk))
+
+max_zysk_mies = max(Zyski_mies, key = lambda x: x[2])
+min_zysk_mies = min(Zyski_mies, key = lambda x: x[2])
 
 def Roczne_przeliczenie():
     koszty_roczne = {}
@@ -647,13 +642,17 @@ def Roczne_przeliczenie():
     Koszty_rok = [koszty_roczne[rok] for rok in sorted(koszty_roczne.keys())]
     Przychod_rok = [przychod_roczny[rok] for rok in sorted(przychod_roczny.keys())]
     Zyski_rok = [zyski_roczne[rok] for rok in sorted(zyski_roczne.keys())]
+
     return Koszty_rok, Przychod_rok, Zyski_rok
 
 Koszty_rok, Przychod_rok, Zyski_rok = Roczne_przeliczenie()
+suma_zysk_rok = round(sum(Zyski_rok))
 
 def wykresy5():
     lata = [2022, 2023, 2024]
     miesiace = [f"{rok}-{str(mies).zfill(2)}" for rok in lata for mies in range(1, 13)]
+    del miesiace[0]
+    del miesiace[0]
 
     plt.figure(figsize=(10, 6))
     x = np.arange(len(lata))
@@ -897,6 +896,33 @@ Wycieczka o najmniejszym zysku:
 \end{{center}}
 
 \subsection*{{Wykresy do zadania 5}}
+\subsubsection*{{Porównanie miesięczne}}
+
+Przychody i koszty
+
+\begin{{center}}
+\includegraphics[width = \textwidth]{{wykres_miesieczne_przychody_koszty.png}}
+\end{{center}}
+
+Zyski
+
+\begin{{center}}
+\includegraphics[width = \textwidth]{{wykres_miesieczne_zyski.png}}
+\end{{center}}
+Miesiąc o największym zysku:
+\begin{{itemize}}
+    \item \textbf{{Rok}} {max_zysk_mies[0]}
+    \item \textbf{{Miesiąc}} {max_zysk_mies[1]}
+    \item \textbf{{Zysk:}} {max_zysk_mies[2]:,.2f} PLN
+\end{{itemize}}
+
+Miesiąc o najmniejszym zysku:
+\begin{{itemize}}
+    \item \textbf{{Rok}} {min_zysk_mies[0]}
+    \item \textbf{{Miesiąc}} {min_zysk_mies[1]}
+    \item \textbf{{Zysk:}} {min_zysk_mies[2]:,.2f} PLN
+\end{{itemize}}
+
 \subsubsection*{{Porównanie roczne}}
 
 Przychody i koszty
@@ -911,19 +937,9 @@ Zyski
 \includegraphics[width = \textwidth]{{Wykres_roczne_zyski.png}}
 \end{{center}}
 
-\subsubsection*{{Porównanie miesięczne}}
-
-Przychody i koszty
-
-\begin{{center}}
-\includegraphics[width = \textwidth]{{wykres_miesieczne_przychody_koszty.png}}
-\end{{center}}
-
-Zyski
-
-\begin{{center}}
-\includegraphics[width = \textwidth]{{wykres_miesieczne_zyski.png}}
-\end{{center}}
+\begin{{itemize}}
+    \item \textbf{{Zysk całkowity}} {suma_zysk_rok} PLN
+\end{{itemize}}
 
 \subsection*{{Wykres do zadania 6}}
 
