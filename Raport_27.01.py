@@ -1,4 +1,4 @@
-import pylatex
+from pylatex import Document, Section, Subsection, Tabular, NoEscape, Command
 import mysql.connector
 import os
 import numpy as np
@@ -21,11 +21,11 @@ cursor = con.cursor()
 cursor.execute("SELECT id_rodzaj, Nazwa FROM Rodzaje_wycieczek")
 wynik = cursor.fetchall()
 
-Nazwy = []
+Nazwy_wycieczek = []
 for row in wynik:
     id_rodzaj = int(row[0])
     nazwa = row[1]
-    Nazwy.append((id_rodzaj, nazwa))
+    Nazwy_wycieczek.append((id_rodzaj, nazwa))
 #zliczanie ilości osób ktore pojechały na daną wycieczke
 cursor.execute('''SELECT Rodzaje_wycieczek.id_rodzaj,
 COUNT(DISTINCT Rezerwacje.id_rezerwacje)
@@ -48,7 +48,7 @@ for row in wynik:
     Ilosc_osob.append((id_rodzaj, ilosc))
 
 #zliczanie kosztów zrealizowanych wycieczek z podziałem na rodzaj
-cursor.execute('''SELECT Rodzaje_wycieczek.id_rodzaj,
+cursor.execute('''SELECT Rodzaje_wycieczek.id_rodzaj AS id,
 SUM(Koszty_organizacji.Nocleg_za_noc * 
 (DATEDIFF(Realizowane_wycieczki.Data_zakonczenia, Realizowane_wycieczki.Data_rozpoczecia) - 2)
 + Koszty_organizacji.Przewodnik
@@ -63,11 +63,14 @@ JOIN Rodzaje_wycieczek
 ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
 WHERE Rezerwacje.id_transakcje IN 
 (SELECT id_transakcje FROM Transakcje_finansowe
-WHERE Zrealizowano = 1))
+WHERE Zrealizowano = 1)
+AND Rezerwacje.id_wycieczki = id)
 FROM Koszty_organizacji JOIN Realizowane_wycieczki
 ON Koszty_organizacji.id_koszty = Realizowane_wycieczki.id_koszty
 JOIN Rodzaje_wycieczek 
 ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
+WHERE Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
+AND Koszty_organizacji.id_koszty = Realizowane_wycieczki.id_koszty
 GROUP BY Rodzaje_wycieczek.id_rodzaj
 ORDER BY Rodzaje_wycieczek.id_rodzaj;''')
 
@@ -80,9 +83,9 @@ for row in wyniki:
     koszt_suma = row[1]
     Suma_koszty.append((id_rodzaj, float(koszt_suma)))
 
-#Zyski całkowite na każdą wycieczkę 
+#Zyski_rodzaj całkowite na każdą wycieczkę 
 cursor.execute('''
-SELECT Rodzaje_wycieczek.id_rodzaj,
+SELECT Rodzaje_wycieczek.id_rodzaj AS id,
 SUM(Realizowane_wycieczki.Cena_za_osobe*
 (SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
 FROM Rezerwacje JOIN Realizowane_wycieczki
@@ -91,7 +94,8 @@ JOIN Rodzaje_wycieczek
 ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
 WHERE Rezerwacje.id_transakcje IN 
 (SELECT id_transakcje FROM Transakcje_finansowe
-WHERE Zrealizowano = 1)))
+WHERE Zrealizowano = 1)
+AND Rezerwacje.id_wycieczki = id))
 FROM Realizowane_wycieczki JOIN Rodzaje_wycieczek
 ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
 GROUP BY Rodzaje_wycieczek.id_rodzaj
@@ -104,6 +108,16 @@ for row in wyniki:
     id_rodzaj = row[0]
     przychod_suma = row[1]
     Suma_przychod.append((id_rodzaj, float(przychod_suma)))
+
+Zyski_rodzaj = []
+for i in range(len(Suma_koszty)):
+    indeks, koszt = Suma_koszty[i]
+    _, przychod = Suma_przychod[i]
+    zysk = przychod - koszt
+    Zyski_rodzaj.append((indeks, zysk))
+
+min_zysk_rodzaj = min(Zyski_rodzaj, key=lambda x: x[1])  #najmniejszy zysk
+max_zysk_rodzaj = max(Zyski_rodzaj, key=lambda x: x[1])  #najwiekszy zysk
 
 #PYTANIE 2
 cursor.execute("""
@@ -317,13 +331,15 @@ SUM(Koszty_organizacji.Nocleg_za_noc *
 + Koszty_organizacji.Ubezpieczenie
 + Koszty_organizacji.Transport
 ) * (SELECT COUNT(DISTINCT Rezerwacje.id_rezerwacje)
-FROM Rezerwacje 
-JOIN Realizowane_wycieczki rw ON Rezerwacje.id_wycieczki = rw.id_wycieczki
-JOIN Rodzaje_wycieczek ON rw.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
-WHERE Rezerwacje.id_transakcje IN (
-SELECT id_transakcje 
-FROM Transakcje_finansowe
-WHERE Zrealizowano = 1)) AS koszt
+FROM Rezerwacje JOIN Realizowane_wycieczki
+ON Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
+JOIN Rodzaje_wycieczek
+ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
+WHERE Rezerwacje.id_transakcje IN 
+(SELECT id_transakcje FROM Transakcje_finansowe
+WHERE Zrealizowano = 1)
+AND (SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia)) = rok
+AND (SELECT MONTH(Realizowane_wycieczki.Data_rozpoczecia)) = miesiac) AS koszt
 FROM Koszty_organizacji 
 JOIN Realizowane_wycieczki 
 ON Koszty_organizacji.id_koszty = Realizowane_wycieczki.id_koszty
@@ -354,7 +370,9 @@ JOIN Rodzaje_wycieczek
 ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
 WHERE Rezerwacje.id_transakcje IN 
 (SELECT id_transakcje FROM Transakcje_finansowe
-WHERE Zrealizowano = 1))) AS    przychod
+WHERE Zrealizowano = 1)
+AND (SELECT YEAR(Realizowane_wycieczki.Data_rozpoczecia)) = rok
+AND (SELECT MONTH(Realizowane_wycieczki.Data_rozpoczecia)) = miesiac)) AS przychod
 FROM Realizowane_wycieczki
 GROUP BY YEAR(Realizowane_wycieczki.Data_rozpoczecia),
 MONTH(Realizowane_wycieczki.Data_rozpoczecia)
@@ -371,6 +389,56 @@ for row in wynik:
     Przychod_miesiac.append((rok, miesiac, przychod))
 
 
+
+#PYTANIE 6
+
+# Zapytanie SQL do pobrania danych demograficznych klientów według wieku
+query = '''
+SELECT 
+    CASE 
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) < 20 THEN '<20'
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) BETWEEN 20 AND 29 THEN '20-29'
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) BETWEEN 30 AND 39 THEN '30-39'
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) BETWEEN 40 AND 49 THEN '40-49'
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) BETWEEN 50 AND 59 THEN '50-59'
+        WHEN YEAR(CURDATE()) - YEAR(Data_urodzenia) BETWEEN 60 AND 69 THEN '60-69'
+        ELSE '70+'
+    END AS Wiek,
+    COUNT(*) AS Liczba
+FROM Klienci
+JOIN Rezerwacje ON Klienci.id_klienci = Rezerwacje.id_klienci
+GROUP BY Wiek;
+'''
+
+cursor.execute(query)
+results = cursor.fetchall()
+
+# Przygotowanie danych do wykresu
+labels_demografia = [row[0] for row in results]
+counts_demografia = [row[1] for row in results]
+
+#PYTANIE 7
+# Zapytanie SQL do obliczenia średnich ocen dla realizowanych wycieczek
+query = '''
+SELECT Rodzaje_wycieczek.Nazwa AS Wycieczka, 
+       AVG(Oceny.Ocena) AS Srednia_Ocena
+FROM Oceny
+JOIN Rezerwacje ON Oceny.id_rezerwacje = Rezerwacje.id_rezerwacje
+JOIN Realizowane_wycieczki ON Rezerwacje.id_wycieczki = Realizowane_wycieczki.id_wycieczki
+JOIN Rodzaje_wycieczek ON Realizowane_wycieczki.id_rodzaj = Rodzaje_wycieczek.id_rodzaj
+GROUP BY Rodzaje_wycieczek.Nazwa
+ORDER BY Srednia_Ocena DESC;
+'''
+
+# Wykonanie zapytania
+cursor.execute(query)
+results = cursor.fetchall()
+
+# Przygotowanie danych do wykresu
+wycieczki_do_ocen = [row[0] for row in results]
+srednie_oceny = [row[1] for row in results]
+
+
 cursor.close()
 
 con.close()
@@ -382,22 +450,17 @@ plt.savefig(plot_filename)
 plt.close()
 '''
 
-Zyski = []
-for i in range(len(Suma_koszty)):
-    indeks, koszt = Suma_koszty[i]
-    _, przychod = Suma_przychod[i]
-    zysk = przychod - koszt
-    Zyski.append((indeks, zysk))
+
 
 def wykresy1():
     I, L, P, K, Z = [], [], [], [], []
-    for i in range(len(Nazwy)):
+    for i in range(len(Nazwy_wycieczek)):
         indeks , przychod = Suma_przychod[i]
         I.append(indeks)
         P.append(przychod)
         _, koszt = Suma_koszty[i]
         K.append(koszt)
-        _, zysk = Zyski[i]
+        _, zysk = Zyski_rodzaj[i]
         Z.append(zysk)
         _, osoby = Ilosc_osob[i]
         L.append(osoby)
@@ -424,7 +487,7 @@ def wykresy1():
 
     # Tworzenie wykresu słupkowego dla zysków
     plt.figure(figsize=(12, 8))
-    plt.bar(x, Z, width=0.4, label='Zyski', align='center', color='pink')
+    plt.bar(x, Z, width=0.4, label='Zyski_rodzaj', align='center', color='pink')
 
     plt.xticks(x, I, ha='center', fontsize=10)
     plt.xlabel("Indeks Wycieczki", fontsize=12)
@@ -666,60 +729,130 @@ def wykresy5():
     plt.savefig("wykres_miesieczne_zyski.png")
     plt.close()
 
+
+def wykresy6():
+    # Tworzenie wykresu kołowego
+    plt.figure(figsize=(8, 8))
+    plt.pie(counts_demografia, labels=labels_demografia, autopct='%1.1f%%', colors=['#ff9999', '#66b3ff', '#99ff99', '#ffcc99', '#c2c2f0', '#ffb3e6', '#d9b3ff'], startangle=140)
+    plt.title('Demografia klientów według wieku', fontsize=14, fontweight='bold')
+    plt.axis('equal')
+
+    # Zapisanie wykresu
+    plot_filename = "Demografia_wiekowa.png"
+    plt.savefig(plot_filename)
+    plt.close()
+
+
+def wykresy7():
+    # Generowanie pastelowych kolorów dla słupków
+    kolory = plt.cm.Set2(np.linspace(0, 1, len(wycieczki_do_ocen)))
+    kolory[0] = np.array([1, 0.6, 0.6, 1])  
+    kolory[-1] = np.array([0.7, 0.4, 1, 1])  
+
+    # Tworzenie wykresu
+    plt.figure(figsize=(10, 6))
+    plt.barh(wycieczki_do_ocen, srednie_oceny, color=kolory)
+    plt.xlabel('Średnia Ocena', fontweight='bold', fontsize=12)
+    plt.ylabel('Rodzaj wycieczki', fontweight='bold', fontsize=12)
+    plt.title('Średnie Oceny Wycieczek', fontsize=16, fontweight='bold', loc='center')
+    plt.gca().invert_yaxis()  
+    plt.grid(axis='x', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    plot_filename = "Oceny.png"
+    plt.savefig(plot_filename)
+    plt.close()
+
 wykresy1()
 wykresy2()
 wykresy4()
 wykresy5()
+wykresy6()
+wykresy7()
 
-# Zawartość pliku .tex
-latex_content = rf"""
-\documentclass{{article}}
-\usepackage[T1]{{fontenc}}
-\usepackage[utf8]{{inputenc}}
-\usepackage[polish]{{babel}}
-\usepackage{{graphicx}}
-\usepackage{{amsmath, amsthm, amssymb}}
-\usepackage{{hyperref}}
-\usepackage{{booktabs}}
+# Funkcja generująca raport LaTeX
+def generuj_raport(plik_wyjsciowy="Raport"):
+    # Tworzenie dokumentu LaTeX
+    doc = Document()
 
-\title{{RAPORT}}
-\author{{Amelia Dorożko, 282259 \\
-         Matylda Mordal, 282240 \\
-         Zuzanna Pawlik, 282230 \\
-         Paweł Solecki, 282246 \\
-         Zofia Stępień, 282254}}
-\date{{30.01.2025}}
-
-\begin{{document}}
-\maketitle
-
+    doc.preamble.append(NoEscape(r'\usepackage[T1]{fontenc}'))
+    doc.preamble.append(NoEscape(r'\usepackage[utf8]{inputenc}'))
+    doc.preamble.append(NoEscape(r'\usepackage[polish]{babel}'))
+    doc.preamble.append(NoEscape(r'\usepackage{graphicx}'))
+    doc.preamble.append(NoEscape(r'\usepackage{amsmath, amsthm, amssymb}'))
+    doc.preamble.append(NoEscape(r'\usepackage{hyperref}'))
+    doc.preamble.append(NoEscape(r'\usepackage{booktabs}'))
+    
+    # Tytuł, autorzy, data
+    doc.preamble.append(Command('title', 'RAPORT'))
+    doc.preamble.append(Command('author', NoEscape(
+    r"""Amelia Dorożko, 282259 \\ 
+    Matylda Mordal, 282240 \\ 
+    Zuzanna Pawlik, 282230 \\ 
+    Paweł Solecki, 282246 \\ 
+    Zofia Stępień, 282254""")))
+    doc.preamble.append(Command('date', '30.01.2025'))
+    
+    # Początek dokumentu
+    doc.append(NoEscape(r'\maketitle'))
+    doc.append(NoEscape(rf'''
 \section*{{Wstęp}}
 Tutaj można wrzucic jakiś krótki opis w stylu\\
 poniżej znajdują się pytania z analizy oraz odpowiedzi na nie w formie tabel, wykresów + wnioski\\
 dodatkowo możemy tutaj dać listę założeń ogólnych, a założenia do konkretnych pyatń dawać już bezpośrednio
 przed wykresami/tabelami
 
-\section*{{Wykresy}}
-\subsection*{{Wykresy do zadania 1}}
+\section*{{Pytanie 1}}
+Znajdź najpopularniejsze rodzaje wycieczek, porównaj koszta i zyski, czy są opłacalne?\\
+\\
+                        '''))
+    with doc.create(Subsection("Rodzaje Wycieczek", numbering=False)):
+        with doc.create(Tabular('|c|l|')) as table:
+            table.add_hline()
+            table.add_row(("id_rodzaj", "Nazwa"))
+            table.add_hline()
+            for id_rodzaj, nazwa in Nazwy_wycieczek:
+                table.add_row((id_rodzaj, nazwa))
+                table.add_hline()
+
+    doc.append(NoEscape(rf'''
+\subsection*{{Wykresy do pytania 1}}
+
 Ilość osób na danej wycieczce
 
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Wykres_rodzaj_ilosc.png}}
-\end{{center}}
+\end{{center}}                      
 
 Porównanie przychodów i kosztów
 
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Wykres_rodzaj_przychody_koszty}}
-\end{{center}}
-
+\end{{center}}                       
+                        
 Porównanie zysków
 
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Wykres_rodzaj_zyski.png}}
 \end{{center}}
+'''))
+ 
+    doc.append(NoEscape(rf"""
+\subsubsection*{{Wycieczki z największym i najmniejszym zyskiem}}
 
-\subsection{{zadanie 2}}
+Wycieczka o największym zysku:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {max_zysk_rodzaj[0]}
+    \item \textbf{{Zysk:}} {max_zysk_rodzaj[1]:,.2f} PLN
+\end{{itemize}}
+
+Wycieczka o najmniejszym zysku:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {min_zysk_rodzaj[0]}
+    \item \textbf{{Zysk:}} {min_zysk_rodzaj[1]:,.2f} PLN
+\end{{itemize}}
+
+\subsection*{{zadanie 2}}
 
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Liczba_obsluzonych_klientów_w_kazdym_miesiacu.png}}
@@ -792,17 +925,28 @@ Zyski
 \includegraphics[width = \textwidth]{{wykres_miesieczne_zyski.png}}
 \end{{center}}
 
+\subsection*{{Wykres do zadania 6}}
+
+\begin{{center}}
+\includegraphics[width = \textwidth]{{Demografia_wiekowa.png}}
+\end{{center}}
+
+\subsection*{{Wykres do zadania 7}}
+
+\begin{{center}}
+\includegraphics[width = \textwidth]{{Oceny.png}}
+\end{{center}}
+
 \end{{document}}
-"""
+"""))
+    
+    doc.generate_tex(plik_wyjsciowy)
+    print(f"Raport zapisano jako {plik_wyjsciowy}.tex")
 
-# Zapisanie pliku .tex
-file_name = "Raport.tex"
-with open(file_name, "w", encoding="utf-8") as tex_file:
-    tex_file.write(latex_content)
 
-# Kompilacja LaTeX do PDF
+generuj_raport()
 try:
-    subprocess.run(["pdflatex", file_name], check=True)
+    subprocess.run(["pdflatex", 'Raport.tex'], check=True)
     print("Raport wygenerowany pomyślnie.")
 except FileNotFoundError:
     print("Nie znaleziono programu pdflatex. Upewnij się, że LaTeX jest zainstalowany.")
