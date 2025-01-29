@@ -1,6 +1,5 @@
-from pylatex import Document, Section, Subsection, Tabular, NoEscape, Command, Center
+from pylatex import Document, Subsection, Tabular, NoEscape, Command, Center
 import mysql.connector
-import os
 import numpy as np
 import matplotlib.pyplot as plt
 import subprocess
