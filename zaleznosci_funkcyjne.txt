@@ -1,0 +1,70 @@
+1. Tabela Klienci
+Klucz główny: id_klienci
+
+Zależności funkcyjne:
+id_klienci → {Imie, Nazwisko, Data_urodzenia, Numer_telefonu, Email, Dane_kontaktowe_bliskich, Ulica, Numer_lokalu, Miasto, Kod_pocztowy}
+
+Wszystkie atrybuty są w pełni zależne od klucza głównego.
+
+2. Tabela Pracownicy
+Klucz główny: id_pracownicy
+
+Zależności funkcyjne:
+id_pracownicy → {id_stanowisko, Imie, Nazwisko, Numer_telefonu, Email, Ulica, Numer_lokalu, Miasto, Kod_pocztowy, Pensja, Data_urodzenia, Data_zatrudnienia}
+id_stanowisko → {Kategoria, Koszt_stanowiska}
+
+Tranzytywna zależność id_pracownicy → id_stanowisko → Kategoria jest wydzielona poprzez tabelę Stanowisko, więc struktura jest poprawna.
+
+3. Tabela Rodzaje_wycieczek
+Klucz główny: id_rodzaj
+
+Zależności funkcyjne:
+id_rodzaj → {Nazwa, Opis, id_wylot, id_przylot}
+id_wylot → Miasto 
+id_przylot → Miasto 
+
+Tranzytywne zależności id_rodzaj → id_wylot → Miasto oraz id_rodzaj → id_przylot → Miasto są wydzielone poprzez tabele Miejsce_wylotu i Miejsce_przylotu.
+
+4. Tabela Realizowane_wycieczki
+Klucz główny: id_wycieczki
+
+Zależności funkcyjne:
+id_wycieczki → {id_rodzaj, id_koszty, Cena_za_osobe, Data_rozpoczecia, Data_zakonczenia}
+id_koszty → {Nocleg_za_noc, Przewodnik, Loty, Atrakcje, Ubezpieczenie, Transport} 
+
+Zależności są poprawnie wydzielone poprzez tabelę Koszty_organizacji.
+
+5. Tabela Rezerwacje
+Klucz główny: id_rezerwacje
+
+Zależności funkcyjne:
+id_rezerwacje → {id_klienci, id_pracownicy, id_wycieczki, id_transakcje, Data_rezerwacji}
+Klucze obce (id_klienci, id_pracownicy, id_wycieczki, id_transakcje) odnoszą się do kluczy głównych w innych tabelach.
+
+Brak zależności funkcyjnych poza kluczami głównymi i obcymi. 
+
+6. Tabela Koszty_organizacji
+Klucz główny: id_koszty
+
+Zależności funkcyjne:
+id_koszty → {Nocleg_za_noc, Przewodnik, Loty, Atrakcje, Ubezpieczenie, Transport}.
+
+Wszystkie atrybuty są w pełni zależne od klucza głównego.
+
+7. Tabela Transakcje_finansowe
+Klucz główny: id_transakcje
+
+Zależności funkcyjne:
+id_transakcje → {Zrealizowano, id_metody}
+id_metody → Metoda 
+
+Tranzytywna zależność id_transakcje → id_metody → Metoda jest obsłużona przez tabelę Metody_platnosci.
+
+8. Tabela Oceny
+Klucz główny: id_oceny
+
+Zależności funkcyjne:
+id_oceny → {id_rezerwacje, Ocena, Data_oceny}
+id_rezerwacje → {id_klienci, ...}
+
+Zależności są poprawnie wydzielone poprzez tabelę Rezerwacje.
