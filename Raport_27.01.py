@@ -1,4 +1,4 @@
-from pylatex import Document, Section, Subsection, Tabular, NoEscape, Command
+from pylatex import Document, Section, Subsection, Tabular, NoEscape, Command, Center
 import mysql.connector
 import os
 import numpy as np
@@ -118,8 +118,7 @@ for i in range(len(Suma_koszty)):
 
 min_zysk_rodzaj = min(Zyski_rodzaj, key=lambda x: x[1])  #najmniejszy zysk
 max_zysk_rodzaj = max(Zyski_rodzaj, key=lambda x: x[1])  #najwiekszy zysk
-suma_zysk_rodzaj = sum(x[1] for x in Zyski_rodzaj) 
-print(suma_zysk_rodzaj)
+suma_zysk_rodzaj = sum(x[1] for x in Zyski_rodzaj)
 
 #PYTANIE 2
 cursor.execute("""
@@ -135,6 +134,12 @@ wynik2 = cursor.fetchall()
 ######################################
 months_liczba_klientow = [row[0] for row in wynik2]
 liczba_klientow = [row[1] for row in wynik2]
+miesiac_rez = []
+for row in wynik2:
+    mies = row[0]
+    ile  = int(row[1])
+    miesiac_rez.append((mies,ile))
+
 query = """
 SELECT 
     DATE_FORMAT(rw.data_rozpoczecia, '%Y-%m') AS Miesiac,
@@ -146,6 +151,14 @@ ORDER BY Miesiac;
 """
 
 data_miesiace = pd.read_sql(query, con)
+
+cursor.execute(query)
+result = cursor.fetchall()
+wyjazdy_na_miesiac = []
+for row in result:
+    mies, ile = row
+    wyjazdy_na_miesiac.append((mies, ile))
+
 ####################################
 cursor.execute("""
 SELECT YEAR(rw.data_rozpoczecia) AS rok, MONTH(rw.data_rozpoczecia) AS miesiac, 
@@ -165,6 +178,17 @@ data_ilosc_mies = {month: 0 for month in months}
 for row in results:
     year, month_number, count = row
     data_ilosc_mies[months[month_number - 1]] += count
+iloscmies = []
+suma_ilosc_rok = {}
+for row in results:
+    rok, mies, ile = row
+    iloscmies.append((rok,mies,ile))
+    if rok in suma_ilosc_rok:
+        suma_ilosc_rok[rok] += ile
+    elif rok != 2025:
+        suma_ilosc_rok[rok] = ile
+
+suma_ilosc_rok = list(suma_ilosc_rok.items())
 #######################################################
 cursor.execute("""
 SELECT YEAR(rw.data_rozpoczecia) AS rok, MONTH(rw.data_rozpoczecia) AS miesiac, 
@@ -189,46 +213,37 @@ for row in result:
 
 #PYTANIE 3
 query = """
-WITH 
-Rezerwacje_Klienta AS (
-    SELECT 
-        id_klienci,
-        MIN(Data_rezerwacji) AS Pierwsza_rezerwacja,
-        MAX(Data_rezerwacji) AS Ostatnia_rezerwacja
-    FROM Rezerwacje
-    GROUP BY id_klienci
-)
-
 SELECT 
+  id_rodzaj AS "ID Rodzaju Wycieczki",
+  COUNT(DISTINCT CASE WHEN trip_number = 1 THEN id_klienci END) AS "Liczba klientów jako pierwsza",
+  COUNT(DISTINCT CASE WHEN trip_number > 1 THEN id_klienci END) AS "Liczba klientów jako kolejna",
+  COUNT(DISTINCT CASE WHEN trip_number = max_trip_number THEN id_klienci END) AS "Liczba klientów jako ostatnia"
+FROM (
+  SELECT 
+    k.id_klienci,
     rw.id_rodzaj,
-    COUNT(DISTINCT CASE 
-        WHEN r.Data_rezerwacji = rk.Pierwsza_rezerwacja THEN r.id_klienci
-    END) AS liczba_osob,
-    COUNT(DISTINCT CASE 
-        WHEN r.Data_rezerwacji = rk.Pierwsza_rezerwacja 
-             AND EXISTS (
-                 SELECT 1 
-                 FROM Rezerwacje r_next
-                 WHERE r_next.id_klienci = r.id_klienci
-                   AND r_next.Data_rezerwacji > r.Data_rezerwacji
-             ) THEN r.id_klienci
-    END) AS liczba_osob_z_kolejna_wycieczka,
-    COUNT(DISTINCT CASE 
-        WHEN r.Data_rezerwacji = rk.Ostatnia_rezerwacja THEN r.id_klienci
-    END) AS liczba_osob_z_ostatnia_wycieczka
-FROM Rezerwacje r
-JOIN Realizowane_wycieczki rw ON r.id_wycieczki = rw.id_wycieczki
-JOIN Rezerwacje_Klienta rk ON r.id_klienci = rk.id_klienci
-GROUP BY rw.id_rodzaj
-ORDER BY liczba_osob DESC;
+    ROW_NUMBER() OVER (PARTITION BY k.id_klienci ORDER BY r.Data_rezerwacji) AS trip_number,
+    COUNT(*) OVER (PARTITION BY k.id_klienci) AS max_trip_number
+  FROM Klienci k
+  JOIN Rezerwacje r ON k.id_klienci = r.id_klienci
+  JOIN Realizowane_wycieczki rw ON r.id_wycieczki = rw.id_wycieczki
+) AS TripSequence
+GROUP BY id_rodzaj
+ORDER BY id_rodzaj;
 """
 
 cursor.execute(query)
 results = cursor.fetchall()
 
-print("Tabela: id_rodzaj | liczba_osob | liczba_osob_z_kolejna_wycieczka | liczba_osob_z_ostatnia_wycieczka")
+dane_druga_ostatnia = []
 for row in results:
-    print(f"id_rodzaj: {row[0]}, liczba_osob: {row[1]}, liczba_osob_z_kolejna_wycieczka: {row[2]}, liczba_osob_z_ostatnia_wycieczka: {row[3]}")
+    id = row[0]
+    ile = int(row[1])
+    wrocili = int(row[2])
+    procent_powroty = round(wrocili / ile* 100, 2)
+    ostatnia = int(row[3])
+    dane_druga_ostatnia.append((id,ile,wrocili,procent_powroty,ostatnia))
+
 
 #PYTANIE 4
 
@@ -320,7 +335,6 @@ if koszty_stanowiska is None:
     koszty_stanowiska = 0
 #miesięczny koszt zatrudnienia pracowników
 koszt_pracownicy = narzut + float(koszty_stanowiska)
-print(koszt_pracownicy)
 
 #Suma kosztów organizacji wycieczek w danym miesiącu
 cursor.execute('''
@@ -844,30 +858,129 @@ Wycieczka o największym zysku:
     \item \textbf{{id rodzaju:}} {max_zysk_rodzaj[0]}
     \item \textbf{{Zysk:}} {max_zysk_rodzaj[1]:,.2f} PLN
 \end{{itemize}}
-
 Wycieczka o najmniejszym zysku:
 \begin{{itemize}}
     \item \textbf{{id rodzaju:}} {min_zysk_rodzaj[0]}
     \item \textbf{{Zysk:}} {min_zysk_rodzaj[1]:,.2f} PLN
 \end{{itemize}}
+"""))
+    
+    najlepszy_rez = max(miesiac_rez, key=lambda x: x[1])
+    najgorszy_rez = min(miesiac_rez, key=lambda x: x[1])
 
-\subsection*{{zadanie 2}}
+    najlepszy_mies_wyjazd = max(wyjazdy_na_miesiac, key = lambda x: x[1])
+    najgorszy_mies_wyjazd = min(wyjazdy_na_miesiac, key = lambda x: x[1])
 
+    najlepszy_ilosc_rok = max(suma_ilosc_rok, key = lambda x: x[1])
+    najgorszy_ilosc_rok = min(suma_ilosc_rok, key = lambda x: x[1])
+
+
+
+    doc.append(NoEscape(rf"""
+\section*{{Pytanie 2}}
+Sporządź wykres liczby obsłużonych klientów w każdym miesiącu działalności firmy, czy firma rośnie, czy podupada?
+
+\subsubsection*{{Ilość osób, które złożyły rezerwację w danym miesiącu}}
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Liczba_obsluzonych_klientów_w_kazdym_miesiacu.png}}
 \end{{center}}
+Miesiąc z największą ilością rezerwacji:
+\begin{{itemize}}
+    \item \textbf{{Miesiąc: }} {najlepszy_rez[0]}
+    \item \textbf{{Ilość rezerwacji}} {najlepszy_rez[1]}
+\end{{itemize}}
+Miesiąc z najmniejszą ilością rezerwacji:
+\begin{{itemize}}
+    \item \textbf{{Miesiąc: }} {najgorszy_rez[0]}
+    \item \textbf{{Ilość rezerwacji}} {najgorszy_rez[1]}
+\end{{itemize}} 
 
+\subsubsection*{{Ilość osób, które pojechały na wycieczkę w danym miesiącu}}
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Liczba_osob_na_wycieczkach_w_danym_miesiacu.png}}
 \end{{center}}
+Miesiąc z największą ilością wyjazdów:
+\begin{{itemize}}
+    \item \textbf{{Miesiąc: }} {najlepszy_mies_wyjazd[0]}
+    \item \textbf{{Ilość rezerwacji}} {najlepszy_mies_wyjazd[1]}
+\end{{itemize}}
+Miesiąc z najmniejszą ilością wyjazdów:
+\begin{{itemize}}
+    \item \textbf{{Miesiąc: }} {najgorszy_mies_wyjazd[0]}
+    \item \textbf{{Ilość rezerwacji}} {najgorszy_mies_wyjazd[1]}
+\end{{itemize}} 
 
+\subsubsection*{{Ilość osób, które pojechały na wycieczkę w danym miesiącu - porównanie względem roku}}
+\begin{{center}}
+\includegraphics[width = \textwidth]{{Liczba_osob_na_wycieczkach_w_poszczegolnych_miesiacach_w_latach_2022_2024.png}}
+\end{{center}}
+Rok z największą ilością klientów na wyjazdach:
+\begin{{itemize}}
+    \item \textbf{{Rok: }} {najlepszy_ilosc_rok[0]}
+    \item \textbf{{Ilość osób na wyjazdach: }} {najlepszy_ilosc_rok[1]}
+\end{{itemize}}
+Rok z najmniejszą ilością klientów na wyjazdach:
+\begin{{itemize}}
+    \item \textbf{{Rok: }} {najgorszy_ilosc_rok[0]}
+    \item \textbf{{Ilość osób na wyjazdach: }} {najgorszy_ilosc_rok[1]}
+\end{{itemize}} 
+
+\subsubsection*{{Porównanie popularności wycieczek ze względu na miesiąc rozpoczęcia}}
 \begin{{center}}
 \includegraphics[width = \textwidth]{{Liczba_osob_które_pojechaly_na_wycieczke_w_poszczegolnych_miesiacach.png}}
 \end{{center}}
 
-\begin{{center}}
-\includegraphics[width = \textwidth]{{Liczba_osob_na_wycieczkach_w_poszczegolnych_miesiacach_w_latach_2022_2024.png}}
-\end{{center}}
+
+
+\section*{{Pytanie 3}}
+Sprawdź, po których wycieczkach klienci wracają na kolejne, a po których mają dość i więcej ich nie widzicie. Czy są takie, które być może powinny zniknąć z oferty?
+
+\subsection*{{Tabela danych}}
+"""))
+    with doc.create(Center()):
+        with doc.create(Tabular('|c|c|c|c|c|')) as table:
+            table.add_hline()
+            table.add_row(("Id wycieczki", "Pierwsza wycieczka", "Kolejna wycieczka","Odsetek powrotów" , "Ostatnia wycieczka"))
+            table.add_hline()
+            for i,a,b,c,d in dane_druga_ostatnia:
+                table.add_row((i,a,b,str(c)+'%',d))
+                table.add_hline()
+
+    max_powroty = max(dane_druga_ostatnia, key = lambda x: x[3])
+    min_powroty = min(dane_druga_ostatnia, key = lambda x: x[3])
+
+    posortowane_po_ost = sorted(dane_druga_ostatnia, key=lambda x: x[4])
+    id_best = posortowane_po_ost[0][0]
+    id_worst = posortowane_po_ost[-1][0]
+
+
+    doc.append(NoEscape(rf"""Pierwsza wycieczka - Ile osób było na tej wycieczce jako na swojej pierwszej
+Kolejna wycieczka - Ile z tych osób wybrało się na kolejną wycieczkę
+Odsetek powrotów - Jaką część stanowią osoby, które wybrały się na kolejną wycieczkę
+Ostatnia wycieczka - Ile osób po danej wycieczce nie było już na żadnej innej
+\subsubsection*{{Wycieczki z największym i najmniejszym odsetkiem powrotów}}
+
+Wycieczka o największym odsetku powrotów:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {max_powroty[0]}
+    \item \textbf{{Odsetek powrotów: }} {max_powroty[3]}\%
+\end{{itemize}}
+Wycieczka o najmniejszym odsetku powrotów:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {min_powroty[0]}
+    \item \textbf{{Odsetek powrotów}} {min_powroty[3]}\%
+\end{{itemize}}
+
+\subsubsection*{{Wycieczki po których nie wraca najmniej i najwięcej klientów}}
+
+Wycieczka, po której nie wraca najmniej osób:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {id_best}
+\end{{itemize}}
+Wycieczka, po której nie wraca najwięcej osób:
+\begin{{itemize}}
+    \item \textbf{{id rodzaju:}} {id_worst}
+\end{{itemize}}
 
 \subsection*{{Wykresy do zadania 4}}
 
@@ -915,7 +1028,6 @@ Miesiąc o największym zysku:
     \item \textbf{{Miesiąc}} {max_zysk_mies[1]}
     \item \textbf{{Zysk:}} {max_zysk_mies[2]:,.2f} PLN
 \end{{itemize}}
-
 Miesiąc o najmniejszym zysku:
 \begin{{itemize}}
     \item \textbf{{Rok}} {min_zysk_mies[0]}
