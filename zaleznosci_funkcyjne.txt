@@ -4,7 +4,7 @@ Klucz główny: id_klienci
 Zależności funkcyjne:
 id_klienci → {Imie, Nazwisko, Data_urodzenia, Numer_telefonu, Email, Dane_kontaktowe_bliskich, Ulica, Numer_lokalu, Miasto, Kod_pocztowy}
 
-Wszystkie atrybuty są w pełni zależne od klucza głównego.
+Wszystkie atrybuty są w pełni zależne od klucza głównego (zakładamy, że dane miasto może mieć więcej niż jeden kod pocztowy).
 
 2. Tabela Pracownicy
 Klucz główny: id_pracownicy
