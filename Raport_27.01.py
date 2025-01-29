@@ -554,7 +554,7 @@ def wykresy1():
 def wykresy2():
     #WYKRESY ZAD 2
     plt.figure(figsize=(10, 6))
-    plt.plot(months_liczba_klientow, liczba_klientow, marker='o', color='blue', label='Liczba klientów')
+    plt.plot(months_liczba_klientow, liczba_klientow, marker='o', color='#ff9999', label='Liczba klientów')
     plt.title('Liczba obsłużonych klientów w każdym miesiącu', fontsize=14)
     plt.xlabel('Miesiąc', fontsize=12)
     plt.ylabel('Liczba klientów', fontsize=12)
